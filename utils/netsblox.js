@@ -58,7 +58,6 @@ module.exports = {
     getYFromLatitude,
     coordsAt,
     pixelsAt,
-    getImageCoordinates,
     getLatitudeFromY,
     getLongitudeFromX
 }

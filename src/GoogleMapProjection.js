@@ -32,8 +32,6 @@ class GoogleMapProjection {
             scale: scale,
             mapType: "terrain"
         }
-        // plot the google map as soon as a GoogleMap object is instantiated
-        this.plotMap();
     }
     /**
      * Set the url for google static map.
@@ -60,8 +58,7 @@ class GoogleMapProjection {
     plotFile(filePath) {
         const file = fs.readFileSync(filePath);
         const plott = plot(file, {size: 1800, background: 'white', lineWidth: 2});
-        this.path = "./outputs/tmp.png";
-        writePngToFile(this.path, plott);
+        writePngToFile("./outputs/tmp.png", plott);
     }
     /**
      * Add multiple hurricane plots onto the current google static map.
@@ -69,12 +66,9 @@ class GoogleMapProjection {
      */
     addPlots(arr) {
         for(let i = 0; i < arr.length; ++i) {
-            if(i === 0) this.addHurricane(arr[i]);
-            else {
-                setTimeout(() => {
-                    this.addHurricane(arr[i]);
-                }, 1300);
-            }
+            setTimeout(() => {
+                this.addHurricane(arr[i]);
+            }, i * 2000);
         }
     }
     /**
@@ -91,14 +85,34 @@ class GoogleMapProjection {
         let xMax = utils.getXFromLongitude(boundingBox.maxLng, this.settings);
         let yMin = utils.getYFromLatitude(boundingBox.minLat, this.settings);
         let yMax = utils.getYFromLatitude(boundingBox.maxLat, this.settings);
-        this.plotFile(filePath);
-        // wait for the drawing of the hurricane plot before composition of images
-        setTimeout(() => {
+        // plot the map first
+        new Promise((resolve, reject) => {
+            let params = this.setParams();
+            fs.stat('./outputs/googleMap.png', function(err, stat) {
+                if(err == null) {
+                    resolve();
+                } else if(err.code === 'ENOENT') {
+                    request(params).pipe(fs.createWriteStream('./outputs/googleMap.png'));
+                    setTimeout(() => {
+                        resolve();
+                    }, 1000);
+                } else {
+                    console.log('Error: ', err.code);
+                }
+            });
+        }).then(() => {
+            return new Promise(((resolve, reject) => {
+                this.plotFile(filePath);
+                setTimeout(() => {
+                    resolve();
+                }, 500);
+            }));
+        }).then(() => {
             JIMP.read('./outputs/googleMap.png', (err0, mapImage) => {
-                if (err0) console.log(err0);
+                if (err0) console.log(1, err0);
                 else {
                     JIMP.read('./outputs/tmp.png', (err1, plot) => {
-                        if(err1) console.log(err1);
+                        if(err1) console.log(2, err1);
                         else {
                             for(let i = xMin; i <= xMax; ++i) {
                                 for(let j = yMin; j <= yMax; ++j) {
@@ -126,7 +140,7 @@ class GoogleMapProjection {
                     })
                 }
             });
-        }, 1000);
+        });
     }
 }
 
