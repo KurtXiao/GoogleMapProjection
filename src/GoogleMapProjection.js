@@ -32,6 +32,7 @@ class GoogleMapProjection {
             scale: scale,
             mapType: "terrain"
         }
+        this.plotMap();
     }
     /**
      * Set the url for google static map.
@@ -86,28 +87,13 @@ class GoogleMapProjection {
         let yMin = utils.getYFromLatitude(boundingBox.minLat, this.settings);
         let yMax = utils.getYFromLatitude(boundingBox.maxLat, this.settings);
         // plot the map first
-        new Promise((resolve, reject) => {
-            let params = this.setParams();
-            fs.stat('./outputs/googleMap.png', function(err, stat) {
-                if(err == null) {
-                    resolve();
-                } else if(err.code === 'ENOENT') {
-                    request(params).pipe(fs.createWriteStream('./outputs/googleMap.png'));
-                    setTimeout(() => {
-                        resolve();
-                    }, 1000);
-                } else {
-                    console.log('Error: ', err.code);
-                }
-            });
-        }).then(() => {
-            return new Promise(((resolve, reject) => {
+       new Promise((resolve, reject) => {
                 this.plotFile(filePath);
                 setTimeout(() => {
                     resolve();
-                }, 500);
-            }));
-        }).then(() => {
+                }, 1000);
+            })
+        .then(() => {
             JIMP.read('./outputs/googleMap.png', (err0, mapImage) => {
                 if (err0) console.log(1, err0);
                 else {
