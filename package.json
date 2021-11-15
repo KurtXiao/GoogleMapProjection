@@ -1,11 +1,9 @@
 {
   "dependencies": {
-    "axios": "^0.24.0",
     "canvas": "^2.8.0",
     "jimp": "^0.16.1",
     "nexrad-level-3-data": "^0.4.4",
     "nexrad-level-3-plot": "^0.11.3",
-    "request": "^2.88.2",
     "sphericalmercator": "^1.0.5"
   }
 }

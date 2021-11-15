@@ -1,8 +1,7 @@
-const request = require('request');
 const JIMP = require('jimp');
 const fs = require('fs');
 const parser = require('nexrad-level-3-data');
-const { plot, writePngToFile } = require('nexrad-level-3-plot');
+const { plot } = require('nexrad-level-3-plot');
 const utils = require('../utils/index');
 
 
@@ -48,6 +47,7 @@ class GoogleMapProjection {
     }
     /**
      * Plot the google static map.
+     * @returns Map a promise of the bitmap of google static map.
      */
     plotMap() {
         return new Promise((resolve => {
@@ -59,12 +59,15 @@ class GoogleMapProjection {
     }
     /**
      * Draw a hurricane plot.
-     * @param filePath path of the file
+     * @param filePath path of the file.
+     * @returns Nexrad a promise of a canvas object of nexrad plot.
      */
     plotFile(filePath) {
         return new Promise(resolve => {
             const file = fs.readFileSync(filePath);
-            resolve(plot(file, {size: 1800, background: 'white', lineWidth: 2}));
+            resolve(plot(file, {size: 1800, background: 'white', lineWidth: 2})
+                .getContext('2d')
+                .getImageData(0, 0, 1800, 1800));
         });
     }
     /**
@@ -72,23 +75,26 @@ class GoogleMapProjection {
      * @param arr an array of paths for hurricane plots
      */
     addPlots(arr) {
-
-        for(let i = 0; i < arr.length; ++i) {
-            setTimeout(() => {
-                this.addHurricane(arr[i]);
-            }, i * 2000);
+        for(let i = 0, p = Promise.resolve(); i <= arr.length; ++i) {
+            if(i === arr.length) {
+                p.then(() => {
+                    this.draw();
+                })
+            }
+            else {
+                p = p.then(() => {
+                    return new Promise(resolve => {
+                        resolve(this.addHurricane(arr[i]));
+                    })
+                })
+            }
         }
-
-        /*
-                for(let i = 0, p = Promise.resolve(); i < arr.length; ++i) {
-                    p = p.then(() => { this.addHurricane(arr[i]); });
-                }
-            */
 
     }
     /**
      * Add a single hurricane plot onto the current google static map.
-     * @param filePath path of the file
+     * @param filePath path of the file.
+     * @returns Pic a promise of a the bitmap of the composite picture.
      */
     addHurricane(filePath) {
         const file = fs.readFileSync(filePath);
@@ -100,50 +106,52 @@ class GoogleMapProjection {
         let xMax = utils.getXFromLongitude(boundingBox.maxLng, this.settings);
         let yMin = utils.getYFromLatitude(boundingBox.minLat, this.settings);
         let yMax = utils.getYFromLatitude(boundingBox.maxLat, this.settings);
-        // plot the map first
-        new Promise(resolve => {
-            this.plotFile(filePath).then((nexrad) => {
-                resolve(nexrad);
-            })
-        })
-            .then((nexrad) => {
-                this.plotMap().then(() => {
-                    new JIMP({data: this.map.data, width: this.map.width, height: this.map.height}, (err0, mapImage) => {
-                        if (err0) console.log(1, err0);
-                        else {
-                            JIMP.read(nexrad, (err1, plot) => {
-                                if(err1) console.log(2, err1);
-                                else {
-                                    for(let i = xMin; i <= xMax; ++i) {
-                                        for(let j = yMin; j <= yMax; ++j) {
-                                            let mapX = Math.floor(i / this.settings.scale) + mapImage.bitmap.width / 2;
-                                            let mapY = mapImage.bitmap.height / 2 - Math.floor(j / this.settings.scale);
-                                            // only consider xy within the boundaries of google map image
-                                            if(mapX >= 0 && mapX <= mapImage.bitmap.width && mapY >= 0 && mapY <= mapImage.bitmap.height) {
-                                                let lat = utils.getLatitudeFromY(j, this.settings);
-                                                let lng = utils.getLongitudeFromX(i, this.settings);
-                                                let disX = utils.getDistanceFromLatLonInKm(latCen, lng, latCen, lngCen);
-                                                let x = Math.round(disX / PIXELWIDTH);
-                                                if(lng < lngCen) x *= -1;
-                                                let disY = utils.getDistanceFromLatLonInKm(lat, lngCen, latCen, lngCen);
-                                                let y = Math.round(disY / PIXELWIDTH);
-                                                if(lat < latCen) y *= -1;
-                                                // int for white === 4294967295
-                                                if(plot.getPixelColor(x + 900, 900 - y) !== 4294967295) {
-                                                    mapImage.setPixelColor(plot.getPixelColor(x + 900, 900 - y), mapX, mapY);
+        return new Promise(resolve => {
+            // plot nexrad first
+            this.plotFile(filePath)
+                .then((nexrad) => {
+                    // plot the map
+                    this.plotMap().then((map) => {
+                        new JIMP({data: map.data, width: map.width, height: map.height}, (err0, mapImage) => {
+                            if (err0) console.log(1, err0);
+                            else {
+                                JIMP.read(nexrad, (err1, plot) => {
+                                    if(err1) console.log(2, err1);
+                                    else {
+                                        for(let i = xMin; i <= xMax; ++i) {
+                                            for(let j = yMin; j <= yMax; ++j) {
+                                                let mapX = Math.floor(i / this.settings.scale) + mapImage.bitmap.width / 2;
+                                                let mapY = mapImage.bitmap.height / 2 - Math.floor(j / this.settings.scale);
+                                                // only consider xy within the boundaries of google map image
+                                                if(mapX >= 0 && mapX <= mapImage.bitmap.width && mapY >= 0 && mapY <= mapImage.bitmap.height) {
+                                                    let lat = utils.getLatitudeFromY(j, this.settings);
+                                                    let lng = utils.getLongitudeFromX(i, this.settings);
+                                                    let disX = utils.getDistanceFromLatLonInKm(latCen, lng, latCen, lngCen);
+                                                    let x = Math.round(disX / PIXELWIDTH);
+                                                    if(lng < lngCen) x *= -1;
+                                                    let disY = utils.getDistanceFromLatLonInKm(lat, lngCen, latCen, lngCen);
+                                                    let y = Math.round(disY / PIXELWIDTH);
+                                                    if(lat < latCen) y *= -1;
+                                                    // int for white === 4294967295
+                                                    if(plot.getPixelColor(x + 900, 900 - y) !== 4294967295) {
+                                                        mapImage.setPixelColor(plot.getPixelColor(x + 900, 900 - y), mapX, mapY);
+                                                    }
                                                 }
                                             }
+                                            this.map = mapImage.bitmap;
+                                            resolve(this.map);
                                         }
-                                        this.map = mapImage.bitmap;
                                     }
-                                }
-                            })
-                        }
+                                })
+                            }
+                        });
                     });
                 });
-            });
+        });
     }
-
+    /**
+     * Draw the final plot based on bitmap of google static map.
+     */
     draw() {
         new JIMP({data: this.map.data, width: this.map.width, height: this.map.height}, (err0, mapImage) => {
             mapImage.write('./outputs/result.png');
