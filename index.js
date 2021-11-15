@@ -14,6 +14,9 @@ let arr =
         './data/KSGX_SDUS86_N0HNKX_201711221428'
     ];
 projection.addPlots(arr);
+setTimeout(() => {
+    projection.draw();
+},9000);
 /*
 let tmp = null;
 const url = "https://maps.googleapis.com/maps/api/staticmap?center=35.0980000,-117.5610000&size=500x500&key=AIzaSyDn0rwuFU4XbHCGkOucJ66s9KT2qzBxO2E&zoom=6&maptype=terrain";
