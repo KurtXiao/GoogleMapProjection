@@ -9,4 +9,4 @@ let arr =
         './data/KLOX_SDUS86_N0HVTX_201711220110',
         './data/KSGX_SDUS86_N0HNKX_201711221428'
     ];
-projection.addPlots(arr);
+projection.addPlots(['./data/KHNX_SDUS86_N0HHNX_202108070010']);
