@@ -1,7 +1,10 @@
 {
   "dependencies": {
+    "aws-sdk": "^2.1031.0",
     "canvas": "^2.8.0",
     "jimp": "^0.16.1",
+    "nexrad-level-2-data": "^2.0.0",
+    "nexrad-level-2-plot": "^1.1.0",
     "nexrad-level-3-data": "^0.4.4",
     "nexrad-level-3-plot": "^0.11.3",
     "sphericalmercator": "^1.0.5"

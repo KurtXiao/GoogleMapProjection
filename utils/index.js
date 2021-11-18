@@ -1,5 +1,6 @@
 const LatLng = require('./LatLng');
 const netsblox = require('./netsblox');
+const RadarLocation = require('./constants');
 
 
 module.exports = {
@@ -10,5 +11,6 @@ module.exports = {
     getXFromLongitude: netsblox.getXFromLongitude,
     getYFromLatitude: netsblox.getYFromLatitude,
     getLatitudeFromY: netsblox.getLatitudeFromY,
-    getLongitudeFromX: netsblox.getLongitudeFromX
+    getLongitudeFromX: netsblox.getLongitudeFromX,
+    RadarLocation: RadarLocation
 };

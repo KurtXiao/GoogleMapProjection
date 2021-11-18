@@ -1,16 +1,16 @@
 const JIMP = require('jimp');
 const fs = require('fs');
-const parser = require('nexrad-level-3-data');
-const { plot } = require('nexrad-level-3-plot');
+const { Level2Radar } = require('../utils/nexrad-level-2-data');
+const { plot } = require('../utils/nexrad-level-2-plot');
 const utils = require('../utils/index');
 
-
+const NEXRAD_SIZE = 3600;
 const PRECISION = 7;
 const APIKEY = "AIzaSyDn0rwuFU4XbHCGkOucJ66s9KT2qzBxO2E";
 // the range of nexrad-level-3-plot is 230km for radius
 const RANGE = 230;
 // the width of a pixel for nexrad-level-3-plot
-const PIXELWIDTH = RANGE / 900;
+const PIXELWIDTH = RANGE / (NEXRAD_SIZE / 2);
 
 
 function toPrecision(number, precisionLimit) {
@@ -65,9 +65,11 @@ class GoogleMapProjection {
     plotFile(filePath) {
         return new Promise(resolve => {
             const file = fs.readFileSync(filePath);
-            resolve(plot(file, {size: 1800, background: 'white', lineWidth: 2})
+            const data = new Level2Radar(file);
+            const nexrad = plot(data, 'REF', {background: 'white'}).REF.canvas;
+            resolve(nexrad
                 .getContext('2d')
-                .getImageData(0, 0, 1800, 1800));
+                .getImageData(0, 0, NEXRAD_SIZE, NEXRAD_SIZE));
         });
     }
     /**
@@ -97,10 +99,9 @@ class GoogleMapProjection {
      * @returns Pic a promise of a the bitmap of the composite picture.
      */
     addHurricane(filePath) {
-        const file = fs.readFileSync(filePath);
-        const level3Data = parser(file);
-        let latCen = level3Data.productDescription.latitude;
-        let lngCen = level3Data.productDescription.longitude;
+        let radar = filePath.split('/')[2].substr(0, 4);
+        let latCen = utils.RadarLocation.RadarLocation[radar][0];
+        let lngCen = utils.RadarLocation.RadarLocation[radar][1];
         let boundingBox = utils.getBoundingBox(latCen, lngCen, RANGE);
         let xMin = utils.getXFromLongitude(boundingBox.minLng, this.settings);
         let xMax = utils.getXFromLongitude(boundingBox.maxLng, this.settings);
@@ -133,8 +134,8 @@ class GoogleMapProjection {
                                                     let y = Math.round(disY / PIXELWIDTH);
                                                     if(lat < latCen) y *= -1;
                                                     // int for white === 4294967295
-                                                    if(plot.getPixelColor(x + 900, 900 - y) !== 4294967295) {
-                                                        mapImage.setPixelColor(plot.getPixelColor(x + 900, 900 - y), mapX, mapY);
+                                                    if(plot.getPixelColor(x + (NEXRAD_SIZE / 2), (NEXRAD_SIZE / 2) - y) !== 4294967295) {
+                                                        mapImage.setPixelColor(plot.getPixelColor(x + (NEXRAD_SIZE / 2), (NEXRAD_SIZE / 2) - y), mapX, mapY);
                                                     }
                                                 }
                                             }
