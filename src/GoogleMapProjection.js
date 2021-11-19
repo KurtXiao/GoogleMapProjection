@@ -1,16 +1,20 @@
 const JIMP = require('jimp');
-const fs = require('fs');
 const { Level2Radar } = require('../utils/nexrad-level-2-data');
 const { plot } = require('../utils/nexrad-level-2-plot');
 const utils = require('../utils/index');
+const AWS = require('aws-sdk');
 
 const NEXRAD_SIZE = 3600;
 const PRECISION = 7;
 const APIKEY = "AIzaSyDn0rwuFU4XbHCGkOucJ66s9KT2qzBxO2E";
-// the range of nexrad-level-3-plot is 230km for radius
-const RANGE = 230;
+// the range of nexrad-level-3-plot is 460km for radius
+const RANGE = 460;
 // the width of a pixel for nexrad-level-3-plot
 const PIXELWIDTH = RANGE / (NEXRAD_SIZE / 2);
+const BUCKET = 'noaa-nexrad-level2';
+// configure aws-sdk
+AWS.config.update({accessKeyId: 'AKIAULYK6YJBMWQW6FIU', secretAccessKey: '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', region: 'us-east-1'});
+const s3 = new AWS.S3();
 
 
 function toPrecision(number, precisionLimit) {
@@ -19,6 +23,7 @@ function toPrecision(number, precisionLimit) {
 
 class GoogleMapProjection {
     constructor(lat, lon, zoom, width, height) {
+        // this line is directly copied from Netsblox project
         const scale = width <= 640 && height <= 640 ? 1 : 2;
         this.settings = {
             center: {
@@ -32,6 +37,7 @@ class GoogleMapProjection {
             mapType: "terrain"
         }
         this.map = null;
+        this.nexrad = [];
     }
     /**
      * Set the url for google static map.
@@ -59,14 +65,13 @@ class GoogleMapProjection {
     }
     /**
      * Draw a hurricane plot.
-     * @param filePath path of the file.
+     * @param data nexrad data from downloader.
      * @returns Nexrad a promise of a canvas object of nexrad plot.
      */
-    plotFile(filePath) {
+    plotFile(data) {
         return new Promise(resolve => {
-            const file = fs.readFileSync(filePath);
-            const data = new Level2Radar(file);
-            const nexrad = plot(data, 'REF', {background: 'white'}).REF.canvas;
+            const tmp = new Level2Radar(data);
+            const nexrad = plot(tmp, 'REF', {background: 'white'}).REF.canvas;
             resolve(nexrad
                 .getContext('2d')
                 .getImageData(0, 0, NEXRAD_SIZE, NEXRAD_SIZE));
@@ -74,32 +79,33 @@ class GoogleMapProjection {
     }
     /**
      * Add multiple hurricane plots onto the current google static map.
-     * @param arr an array of paths for hurricane plots
+     * @param radars an array of radars on the current google static map.
      */
-    addPlots(arr) {
-        for(let i = 0, p = Promise.resolve(); i <= arr.length; ++i) {
-            if(i === arr.length) {
-                p.then(() => {
-                    this.draw();
-                })
-            }
-            else {
-                p = p.then(() => {
-                    return new Promise(resolve => {
-                        resolve(this.addHurricane(arr[i]));
+    addPlots(radars) {
+        this.downloadNexrad(radars).then(() => {
+            for(let i = 0, p = Promise.resolve(); i <= this.nexrad.length; ++i) {
+                if(i === this.nexrad.length) {
+                    p.then(() => {
+                        this.draw();
                     })
-                })
+                }
+                else {
+                    p = p.then(() => {
+                        return new Promise(resolve => {
+                            resolve(this.addHurricane(this.nexrad[i][0], this.nexrad[i][1]));
+                        })
+                    })
+                }
             }
-        }
-
+        });
     }
     /**
      * Add a single hurricane plot onto the current google static map.
-     * @param filePath path of the file.
+     * @param radar name of NEXRAD radar.
+     * @param data  content of the NEXRAD file from downloader.
      * @returns Pic a promise of a the bitmap of the composite picture.
      */
-    addHurricane(filePath) {
-        let radar = filePath.split('/')[2].substr(0, 4);
+    addHurricane(radar, data) {
         let latCen = utils.RadarLocation.RadarLocation[radar][0];
         let lngCen = utils.RadarLocation.RadarLocation[radar][1];
         let boundingBox = utils.getBoundingBox(latCen, lngCen, RANGE);
@@ -109,7 +115,7 @@ class GoogleMapProjection {
         let yMax = utils.getYFromLatitude(boundingBox.maxLat, this.settings);
         return new Promise(resolve => {
             // plot nexrad first
-            this.plotFile(filePath)
+            this.plotFile(data)
                 .then((nexrad) => {
                     // plot the map
                     this.plotMap().then((map) => {
@@ -157,6 +163,82 @@ class GoogleMapProjection {
         new JIMP({data: this.map.data, width: this.map.width, height: this.map.height}, (err0, mapImage) => {
             mapImage.write('./outputs/result.png');
         })
+    }
+    /**
+     * An auto-downloader of up-to-date NEXRAD files.
+     * @param radars the radars whose up-to-date files we want to download.
+     * @returns Res a promise that resolves when all files are downloaded.
+     */
+    downloadNexrad(radars) {
+        this.nexrad = [];
+        return new Promise(resolve => {
+            let arr = [];
+            for(let i = 0; i < radars.length; ++i) {
+                arr.push(this.downloadSingle(radars[i]));
+            }
+            Promise.all(arr).then(() => {
+                resolve();
+            })
+        })
+    }
+    /**
+     * A helper method for downloadNexrad that downloads for a single radar station.
+     * @param radar name of NEXRAD radar.
+     * @returns Res a promise that resolves when the up-to-date file of the selected radar is downloaded.
+     */
+    downloadSingle(radar) {
+        const today = new Date();
+        const tomorrow = new Date(today.getTime() + (24 * 60 * 60 * 1000));
+        return new Promise(((resolve, reject) => {
+            let params = {
+                Bucket: BUCKET,
+                Delimiter: '/',
+                Prefix: `${tomorrow.getFullYear()}/${tomorrow.getMonth() + 1}/${tomorrow.getDate()}/${radar}/`
+            };
+            s3.listObjects(params, (err1, data1) => {
+                if(err1) reject(err1);
+                else {
+                    if(data1.Contents.length === 0) {
+                        params = {
+                            Bucket: BUCKET,
+                            Delimiter: '/',
+                            Prefix: `${today.getFullYear()}/${today.getMonth() + 1}/${today.getDate()}/${radar}/`
+                        };
+                        s3.listObjects(params, (err2, data2) => {
+                            if(err2) reject(err2);
+                            else {
+                                if(data2.Contents.length !== 0) {
+                                    let nexradKey = data2.Contents[data2.Contents.length - 1].Key;
+                                    if(nexradKey.substr(nexradKey.length - 3) === 'MDM') {
+                                        nexradKey = data2.Contents[data2.Contents.length - 2].Key;
+                                    }
+                                    s3.getObject({Bucket: BUCKET, Key: nexradKey}, (err3, data3) => {
+                                        if(err3) console.log(err3)
+                                        else {
+                                            this.nexrad.push([radar, data3.Body]);
+                                            resolve();
+                                        }
+                                    })
+                                }
+                            }
+                        })
+                    }
+                    else {
+                        let nexradKey = data1.Contents[data1.Contents.length - 1].Key;
+                        if(nexradKey.substr(nexradKey.length - 3) === 'MDM') {
+                            nexradKey = data1.Contents[data1.Contents.length - 2].Key;
+                        }
+                        s3.getObject({Bucket: BUCKET, Key: nexradKey}, (err4, data4) => {
+                            if(err4) reject(err4)
+                            else {
+                                this.nexrad.push([radar, data4.Body]);
+                                resolve();
+                            }
+                        })
+                    }
+                }
+            })
+        }));
     }
 }
 
