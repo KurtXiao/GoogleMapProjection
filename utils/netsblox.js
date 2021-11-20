@@ -14,10 +14,14 @@ function getYFromLatitude(latitude, mapInfo) {
     return pixels.y;
 }
 
-function getImageCoordinates(latitude, longitude, mapInfo) {
-    let pixels = pixelsAt(latitude, longitude, mapInfo);
-    return [pixels.x, pixels.y];
+function pixelsAt(lat, lon, mapInfo) {
+    let curPx = merc.px([mapInfo.center.lon, mapInfo.center.lat], mapInfo.zoom);
+    let targetPx = merc.px([lon, lat], mapInfo.zoom);
+    let pixelsXY = {x: (targetPx[0] - curPx[0]), y: -(targetPx[1] - curPx[1])};
+    pixelsXY = {x: pixelsXY.x * mapInfo.scale, y: pixelsXY.y * mapInfo.scale};
+    return pixelsXY;
 }
+
 
 function coordsAt(x, y, map) {
     x = Math.ceil(x / map.scale);
@@ -32,25 +36,15 @@ function coordsAt(x, y, map) {
     return coords;
 }
 
-
-function pixelsAt(lat, lon, mapInfo) {
-    let curPx = merc.px([mapInfo.center.lon, mapInfo.center.lat], mapInfo.zoom);
-    let targetPx = merc.px([lon, lat], mapInfo.zoom);
-    let pixelsXY = {x: (targetPx[0] - curPx[0]), y: -(targetPx[1] - curPx[1])};
-    pixelsXY = {x: pixelsXY.x * mapInfo.scale, y: pixelsXY.y * mapInfo.scale};
-    return pixelsXY;
-}
-
-
 function getLongitudeFromX(x, mapInfo){
     let coords = coordsAt(x, 0, mapInfo);
     return coords.lon;
-};
+}
 
 function getLatitudeFromY(y, mapInfo){
     let coords = coordsAt(0, y, mapInfo);
     return coords.lat;
-};
+}
 
 
 module.exports = {

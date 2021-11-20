@@ -53,108 +53,84 @@ class GoogleMapProjection {
     }
     /**
      * Plot the google static map.
-     * @returns Map a promise of the bitmap of google static map.
+     * @returns Map the bitmap of google static map.
      */
-    plotMap() {
-        return new Promise((resolve => {
-            JIMP.read(this.setParams()).then(image => {
-                this.map = this.map === null ? image.bitmap : this.map;
-                resolve(this.map);
-            });
-        }));
+    async plotMap() {
+        if(this.map !== null) return this.map;
+        let image = await JIMP.read(this.setParams());
+        this.map = image.bitmap;
+        return this.map;
     }
     /**
      * Draw a hurricane plot.
      * @param data nexrad data from downloader.
-     * @returns Nexrad a promise of a canvas object of nexrad plot.
+     * @returns Nexrad a canvas object of nexrad plot.
      */
-    plotFile(data) {
-        return new Promise(resolve => {
-            const tmp = new Level2Radar(data);
-            const nexrad = plot(tmp, 'REF', {background: 'white'}).REF.canvas;
-            resolve(nexrad
-                .getContext('2d')
-                .getImageData(0, 0, NEXRAD_SIZE, NEXRAD_SIZE));
-        });
+    async plotFile(data) {
+        const tmp = new Level2Radar(data);
+        const nexrad = plot(tmp, 'REF', {background: 'white'}).REF.canvas;
+        return (nexrad
+            .getContext('2d')
+            .getImageData(0, 0, NEXRAD_SIZE, NEXRAD_SIZE));
     }
     /**
      * Add multiple hurricane plots onto the current google static map.
      * @param radars an array of radars on the current google static map.
      */
-    addPlots(radars) {
-        this.downloadNexrad(radars).then(() => {
-            for(let i = 0, p = Promise.resolve(); i <= this.nexrad.length; ++i) {
-                if(i === this.nexrad.length) {
-                    p.then(() => {
-                        this.draw();
-                    })
-                }
-                else {
-                    p = p.then(() => {
-                        return new Promise(resolve => {
-                            resolve(this.addHurricane(this.nexrad[i][0], this.nexrad[i][1]));
-                        })
-                    })
-                }
-            }
-        });
+     async addPlots(radars) {
+         if(radars.length === 0) {
+             await this.plotMap();
+             this.draw();
+         }
+         else {
+             await this.downloadNexrad(radars);
+             for(let i = 0; i < this.nexrad.length; ++i) {
+                 await this.addHurricane(this.nexrad[i][0], this.nexrad[i][1]);
+             }
+             this.draw();
+         }
     }
     /**
      * Add a single hurricane plot onto the current google static map.
      * @param radar name of NEXRAD radar.
      * @param data  content of the NEXRAD file from downloader.
-     * @returns Pic a promise of a the bitmap of the composite picture.
      */
-    addHurricane(radar, data) {
+     async addHurricane(radar, data) {
         let latCen = utils.RadarLocation.RadarLocation[radar][0];
         let lngCen = utils.RadarLocation.RadarLocation[radar][1];
         let boundingBox = utils.getBoundingBox(latCen, lngCen, RANGE);
-        let xMin = utils.getXFromLongitude(boundingBox.minLng, this.settings);
-        let xMax = utils.getXFromLongitude(boundingBox.maxLng, this.settings);
-        let yMin = utils.getYFromLatitude(boundingBox.minLat, this.settings);
-        let yMax = utils.getYFromLatitude(boundingBox.maxLat, this.settings);
-        return new Promise(resolve => {
-            // plot nexrad first
-            this.plotFile(data)
-                .then((nexrad) => {
-                    // plot the map
-                    this.plotMap().then((map) => {
-                        new JIMP({data: map.data, width: map.width, height: map.height}, (err0, mapImage) => {
-                            if (err0) console.log(1, err0);
-                            else {
-                                JIMP.read(nexrad, (err1, plot) => {
-                                    if(err1) console.log(2, err1);
-                                    else {
-                                        for(let i = xMin; i <= xMax; ++i) {
-                                            for(let j = yMin; j <= yMax; ++j) {
-                                                let mapX = Math.floor(i / this.settings.scale) + mapImage.bitmap.width / 2;
-                                                let mapY = mapImage.bitmap.height / 2 - Math.floor(j / this.settings.scale);
-                                                // only consider xy within the boundaries of google map image
-                                                if(mapX >= 0 && mapX <= mapImage.bitmap.width && mapY >= 0 && mapY <= mapImage.bitmap.height) {
-                                                    let lat = utils.getLatitudeFromY(j, this.settings);
-                                                    let lng = utils.getLongitudeFromX(i, this.settings);
-                                                    let disX = utils.getDistanceFromLatLonInKm(latCen, lng, latCen, lngCen);
-                                                    let x = Math.round(disX / PIXELWIDTH);
-                                                    if(lng < lngCen) x *= -1;
-                                                    let disY = utils.getDistanceFromLatLonInKm(lat, lngCen, latCen, lngCen);
-                                                    let y = Math.round(disY / PIXELWIDTH);
-                                                    if(lat < latCen) y *= -1;
-                                                    // int for white === 4294967295
-                                                    if(plot.getPixelColor(x + (NEXRAD_SIZE / 2), (NEXRAD_SIZE / 2) - y) !== 4294967295) {
-                                                        mapImage.setPixelColor(plot.getPixelColor(x + (NEXRAD_SIZE / 2), (NEXRAD_SIZE / 2) - y), mapX, mapY);
-                                                    }
-                                                }
-                                            }
-                                            this.map = mapImage.bitmap;
-                                            resolve(this.map);
-                                        }
-                                    }
-                                })
-                            }
-                        });
-                    });
-                });
-        });
+        let xMin = utils.pixelsAt(0, boundingBox.minLng, this.settings).x;
+        let xMax = utils.pixelsAt(0, boundingBox.maxLng, this.settings).x;
+        let yMin = utils.pixelsAt(boundingBox.minLat, 0, this.settings).y;
+        let yMax = utils.pixelsAt(boundingBox.maxLat, 0, this.settings).y;
+        // plot nexrad first
+        let nexrad = await this.plotFile(data);
+        // plot the map
+        let map = await this.plotMap();
+        let mapImage = await new JIMP({data: map.data, width: map.width, height: map.height});
+        let plot = await JIMP.read(nexrad);
+        for (let i = xMin; i <= xMax; ++i) {
+            for (let j = yMin; j <= yMax; ++j) {
+                let mapX = Math.floor(i / this.settings.scale) + mapImage.bitmap.width / 2;
+                let mapY = mapImage.bitmap.height / 2 - Math.floor(j / this.settings.scale);
+                // only consider xy within the boundaries of google map image
+                if (mapX >= 0 && mapX <= mapImage.bitmap.width && mapY >= 0 && mapY <= mapImage.bitmap.height) {
+                    let lat = utils.coordsAt(0, j, this.settings).lat;
+                    let lng = utils.coordsAt(i, 0, this.settings).lon;
+                    let disX = utils.getDistanceFromLatLonInKm(latCen, lng, latCen, lngCen);
+                    let x = Math.round(disX / PIXELWIDTH);
+                    if (lng < lngCen) x *= -1;
+                    let disY = utils.getDistanceFromLatLonInKm(lat, lngCen, latCen, lngCen);
+                    let y = Math.round(disY / PIXELWIDTH);
+                    if (lat < latCen) y *= -1;
+                    // int for white === 4294967295
+                    if (plot.getPixelColor(x + (NEXRAD_SIZE / 2), (NEXRAD_SIZE / 2) - y) !== 4294967295) {
+                        mapImage.setPixelColor(plot.getPixelColor(x + (NEXRAD_SIZE / 2), (NEXRAD_SIZE / 2) - y), mapX, mapY);
+                    }
+                }
+            }
+            this.map = mapImage.bitmap;
+        }
     }
     /**
      * Draw the final plot based on bitmap of google static map.
@@ -167,78 +143,78 @@ class GoogleMapProjection {
     /**
      * An auto-downloader of up-to-date NEXRAD files.
      * @param radars the radars whose up-to-date files we want to download.
-     * @returns Res a promise that resolves when all files are downloaded.
      */
-    downloadNexrad(radars) {
+    async downloadNexrad(radars) {
         this.nexrad = [];
-        return new Promise(resolve => {
-            let arr = [];
-            for(let i = 0; i < radars.length; ++i) {
-                arr.push(this.downloadSingle(radars[i]));
-            }
-            Promise.all(arr).then(() => {
-                resolve();
-            })
-        })
+        let arr = [];
+        for(let i = 0; i < radars.length; ++i) {
+            arr.push(this.downloadSingle(radars[i]));
+        }
+        await Promise.all(arr);
     }
     /**
      * A helper method for downloadNexrad that downloads for a single radar station.
      * @param radar name of NEXRAD radar.
-     * @returns Res a promise that resolves when the up-to-date file of the selected radar is downloaded.
      */
-    downloadSingle(radar) {
+    async downloadSingle(radar) {
         const today = new Date();
         const tomorrow = new Date(today.getTime() + (24 * 60 * 60 * 1000));
-        return new Promise(((resolve, reject) => {
-            let params = {
+        let params = {
+            Bucket: BUCKET,
+            Delimiter: '/',
+            Prefix: `${tomorrow.getFullYear()}/${tomorrow.getMonth() + 1}/${tomorrow.getDate()}/${radar}/`
+        };
+        let dataTomorrow = await s3.listObjects(params).promise();
+        if(dataTomorrow.Contents.length === 0) {
+            params = {
                 Bucket: BUCKET,
                 Delimiter: '/',
-                Prefix: `${tomorrow.getFullYear()}/${tomorrow.getMonth() + 1}/${tomorrow.getDate()}/${radar}/`
+                Prefix: `${today.getFullYear()}/${today.getMonth() + 1}/${today.getDate()}/${radar}/`
             };
-            s3.listObjects(params, (err1, data1) => {
-                if(err1) reject(err1);
-                else {
-                    if(data1.Contents.length === 0) {
-                        params = {
-                            Bucket: BUCKET,
-                            Delimiter: '/',
-                            Prefix: `${today.getFullYear()}/${today.getMonth() + 1}/${today.getDate()}/${radar}/`
-                        };
-                        s3.listObjects(params, (err2, data2) => {
-                            if(err2) reject(err2);
-                            else {
-                                if(data2.Contents.length !== 0) {
-                                    let nexradKey = data2.Contents[data2.Contents.length - 1].Key;
-                                    if(nexradKey.substr(nexradKey.length - 3) === 'MDM') {
-                                        nexradKey = data2.Contents[data2.Contents.length - 2].Key;
-                                    }
-                                    s3.getObject({Bucket: BUCKET, Key: nexradKey}, (err3, data3) => {
-                                        if(err3) console.log(err3)
-                                        else {
-                                            this.nexrad.push([radar, data3.Body]);
-                                            resolve();
-                                        }
-                                    })
-                                }
-                            }
-                        })
-                    }
-                    else {
-                        let nexradKey = data1.Contents[data1.Contents.length - 1].Key;
-                        if(nexradKey.substr(nexradKey.length - 3) === 'MDM') {
-                            nexradKey = data1.Contents[data1.Contents.length - 2].Key;
-                        }
-                        s3.getObject({Bucket: BUCKET, Key: nexradKey}, (err4, data4) => {
-                            if(err4) reject(err4)
-                            else {
-                                this.nexrad.push([radar, data4.Body]);
-                                resolve();
-                            }
-                        })
-                    }
+            let dataToday = await s3.listObjects(params).promise();
+            if(dataToday.Contents.length !== 0) {
+                let nexradKey = dataToday.Contents[dataToday.Contents.length - 1].Key;
+                if(nexradKey.substr(nexradKey.length - 3) === 'MDM') {
+                    nexradKey = dataToday.Contents[dataToday.Contents.length - 2].Key;
                 }
-            })
-        }));
+                let nexradToday = await s3.getObject({Bucket: BUCKET, Key: nexradKey}).promise();
+                this.nexrad.push([radar, nexradToday.Body]);
+            }
+        }
+        else {
+            let nexradKey = dataTomorrow.Contents[dataTomorrow.Contents.length - 1].Key;
+            if(nexradKey.substr(nexradKey.length - 3) === 'MDM') {
+                nexradKey = dataTomorrow.Contents[dataTomorrow.Contents.length - 2].Key;
+            }
+            let nexradTomorrow = await s3.getObject({Bucket: BUCKET, Key: nexradKey}).promise();
+            this.nexrad.push([radar, nexradTomorrow.Body]);
+        }
+    }
+    /**
+     * Gets all radars on the current map.
+     * @returns Res an array of radars on the current map.
+     */
+    getRadars() {
+        let latMin = utils.coordsAt(0, this.settings.height / -2, this.settings).lat;
+        let latMax = utils.coordsAt(0, this.settings.height, this.settings).lat;
+        let lngMin = utils.coordsAt(this.settings.width / -2, 0, this.settings).lon;
+        let lngMax = utils.coordsAt(this.settings.width / 2, 0, this.settings).lon;
+        let res = [];
+        for(let i in utils.RadarLocation.RadarLocation) {
+            if(utils.RadarLocation.RadarLocation[i][0] > latMin
+                && utils.RadarLocation.RadarLocation[i][0] < latMax
+                && utils.RadarLocation.RadarLocation[i][1] > lngMin
+                && utils.RadarLocation.RadarLocation[i][1] < lngMax) {
+                res.push(i);
+            }
+        }
+        return res;
+    }
+    /**
+     * Plots all radars on the current map.
+     */
+    plotAll() {
+        this.addPlots(this.getRadars());
     }
 }
 
