@@ -53,10 +53,13 @@ class GoogleMapProjection {
     }
     /**
      * Plot the google static map.
+     * @returns Map the bitmap of google static map.
      */
     async plotMap() {
-        if(this.map !== null) return;
-        this.map = await JIMP.read(this.setParams());
+        if(this.map !== null) return this.map;
+        let image = await JIMP.read(this.setParams());
+        this.map = image.bitmap;
+        return this.map;
     }
     /**
      * Draw a hurricane plot.
@@ -74,28 +77,25 @@ class GoogleMapProjection {
      * Add multiple hurricane plots onto the current google static map.
      * @param radars an array of radars on the current google static map.
      */
-     async addPlots(radars) {
-         if(radars.length === 0) {
-             await this.plotMap();
-             this.draw();
-         }
-         else {
-             await this.downloadNexrad(radars);
-             await this.plotMap();
-             let arr = [];
-             for(let i = 0; i < this.nexrad.length; ++i) {
-                 arr.push(this.addHurricane(this.nexrad[i][0], this.nexrad[i][1]));
-             }
-             await Promise.all(arr);
-             this.draw();
-         }
+    async addPlots(radars) {
+        if(radars.length === 0) {
+            await this.plotMap();
+            this.draw();
+        }
+        else {
+            await this.downloadNexrad(radars);
+            for(let i = 0; i < this.nexrad.length; ++i) {
+                await this.addHurricane(this.nexrad[i][0], this.nexrad[i][1]);
+            }
+            this.draw();
+        }
     }
     /**
      * Add a single hurricane plot onto the current google static map.
      * @param radar name of NEXRAD radar.
      * @param data  content of the NEXRAD file from downloader.
      */
-     async addHurricane(radar, data) {
+    async addHurricane(radar, data) {
         let latCen = utils.RadarLocation.RadarLocation[radar][0];
         let lngCen = utils.RadarLocation.RadarLocation[radar][1];
         let boundingBox = utils.getBoundingBox(latCen, lngCen, RANGE);
@@ -107,14 +107,14 @@ class GoogleMapProjection {
         let nexrad = await this.plotFile(data);
         // plot the map
         let map = await this.plotMap();
-        //let mapImage = await new JIMP({data: map.data, width: map.width, height: map.height});
+        let mapImage = await new JIMP({data: map.data, width: map.width, height: map.height});
         let plot = await JIMP.read(nexrad);
         for (let i = xMin; i <= xMax; ++i) {
             for (let j = yMin; j <= yMax; ++j) {
-                let mapX = Math.floor(i / this.settings.scale) + this.map.bitmap.width / 2;
-                let mapY = this.map.bitmap.height / 2 - Math.floor(j / this.settings.scale);
+                let mapX = Math.floor(i / this.settings.scale) + mapImage.bitmap.width / 2;
+                let mapY = mapImage.bitmap.height / 2 - Math.floor(j / this.settings.scale);
                 // only consider xy within the boundaries of google map image
-                if (mapX >= 0 && mapX <= this.map.bitmap.width && mapY >= 0 && mapY <= this.map.bitmap.height) {
+                if (mapX >= 0 && mapX <= mapImage.bitmap.width && mapY >= 0 && mapY <= mapImage.bitmap.height) {
                     let lat = utils.coordsAt(0, j, this.settings).lat;
                     let lng = utils.coordsAt(i, 0, this.settings).lon;
                     let disX = utils.getDistanceFromLatLonInKm(latCen, lng, latCen, lngCen);
@@ -125,17 +125,20 @@ class GoogleMapProjection {
                     if (lat < latCen) y *= -1;
                     // int for white === 4294967295
                     if (plot.getPixelColor(x + (NEXRAD_SIZE / 2), (NEXRAD_SIZE / 2) - y) !== 4294967295) {
-                        this.map.setPixelColor(plot.getPixelColor(x + (NEXRAD_SIZE / 2), (NEXRAD_SIZE / 2) - y), mapX, mapY);
+                        mapImage.setPixelColor(plot.getPixelColor(x + (NEXRAD_SIZE / 2), (NEXRAD_SIZE / 2) - y), mapX, mapY);
                     }
                 }
             }
+            this.map = mapImage.bitmap;
         }
     }
     /**
      * Draw the final plot based on bitmap of google static map.
      */
     draw() {
-        this.map.write('./outputs/result.png');
+        new JIMP({data: this.map.data, width: this.map.width, height: this.map.height}, (err0, mapImage) => {
+            mapImage.write('./outputs/result.png');
+        })
     }
     /**
      * An auto-downloader of up-to-date NEXRAD files.
