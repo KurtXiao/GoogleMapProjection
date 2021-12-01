@@ -159,14 +159,14 @@ class GoogleMapProjection {
         let params = {
             Bucket: BUCKET,
             Delimiter: '/',
-            Prefix: `${tomorrow.getFullYear()}/${tomorrow.getMonth() + 1}/${tomorrow.getDate()}/${radar}/`
+            Prefix: `${tomorrow.getFullYear()}/${(tomorrow.getMonth() + 1).toString().padStart(2,'0')}/${tomorrow.getDate().toString().padStart(2,'0')}/${radar}/`
         };
         let dataTomorrow = await s3.listObjects(params).promise();
         if(dataTomorrow.Contents.length === 0) {
             params = {
                 Bucket: BUCKET,
                 Delimiter: '/',
-                Prefix: `${today.getFullYear()}/${today.getMonth() + 1}/${today.getDate()}/${radar}/`
+                Prefix: `${today.getFullYear()}/${(today.getMonth() + 1).toString().padStart(2,'0')}/${today.getDate().toString().padStart(2,'0')}/${radar}/`
             };
             let dataToday = await s3.listObjects(params).promise();
             if(dataToday.Contents.length !== 0) {
